@@ -18,9 +18,9 @@ NSData *GetDataForHex(NSString *hex) {
   char byte_chars[3] = {'\0','\0','\0'};
   int i;
   for (i=0; i < [hexNoSpaces length] / 2; i++) {
-    byte_chars[0] = [hexNoSpaces characterAtIndex:i*2];
-    byte_chars[1] = [hexNoSpaces characterAtIndex:i*2+1];
-    whole_byte = strtol(byte_chars, NULL, 16);
+    byte_chars[0] = (unsigned char)[hexNoSpaces characterAtIndex:i*2];
+    byte_chars[1] = (unsigned char)[hexNoSpaces characterAtIndex:i*2+1];
+    whole_byte = (unsigned char)strtol(byte_chars, NULL, 16);
     [data appendBytes:&whole_byte length:1];
   }
   return data;
@@ -29,7 +29,7 @@ NSData *GetDataForHex(NSString *hex) {
 @implementation XCTestCase (RNCryptorVectorTests)
 
 - (void)verifyVector:(NSDictionary *)vector key:(NSString *)key equals:(NSData *)actual title:(NSString*)title {
-  XCTAssertEqualObjects(actual, GetDataForHex(vector[key]), @"Failed %@ test (v%d): %s\n", title, [vector[@"version"] intValue], [vector[@"title"] UTF8String]);
+  XCTAssertEqualObjects(actual, GetDataForHex(vector[key]), @"Failed %@ test (v%@): %@\n", title, vector[@"version"], vector[@"title"]);
 }
 
 - (void)_verifyKDF:(NSDictionary *)vector settings:(RNCryptorKeyDerivationSettings)keySettings name:(NSString *)name {
@@ -45,16 +45,21 @@ NSData *GetDataForHex(NSString *hex) {
   [self verifyVector:vector key:@"key_hex" equals:key title:name];
 }
 
-- (void)verify_kdf:(NSDictionary *)vector {
-  [self _verifyKDF:vector settings:kRNCryptorAES256Settings.keySettings name:@"kdf"];
+- (void)verify_v3_kdf:(NSDictionary *)vector {
+  RNCryptorKeyDerivationSettings settings = kRNCryptorAES256Settings.keySettings;
+  [self _verifyKDF:vector settings:settings name:@"kdf"];
 }
 
-- (void)verify_kdf_short:(NSDictionary *)vector {
-  NSCParameterAssert(vector[@"iterations"]);
-
+- (void)verify_v2_kdf:(NSDictionary *)vector {
   RNCryptorKeyDerivationSettings settings = kRNCryptorAES256Settings.keySettings;
-  settings.rounds = 1000;
-  [self _verifyKDF:vector settings:settings name:@"short kdf"];
+  settings.hasV2Password = YES;
+  [self _verifyKDF:vector settings:settings name:@"kdf"];
+}
+
+- (void)verify_v1_kdf:(NSDictionary *)vector {
+  RNCryptorKeyDerivationSettings settings = kRNCryptorAES256Settings.keySettings;
+  settings.hasV2Password = YES;
+  [self _verifyKDF:vector settings:settings name:@"kdf"];
 }
 
 - (void)_verifyPassword:(NSDictionary *)vector settings:(RNCryptorSettings)settings name:(NSString *)name {
@@ -80,26 +85,25 @@ NSData *GetDataForHex(NSString *hex) {
     [self verifyVector:vector key:@"ciphertext_hex" equals:ciphertext title:[name stringByAppendingString:@" encrypt"]];
   }
 
-  NSData *plaintext = [RNDecryptor decryptData:GetDataForHex(vector[@"ciphertext"])
+  NSData *plaintext = [RNDecryptor decryptData:GetDataForHex(vector[@"ciphertext_hex"])
                                   withPassword:vector[@"password"]
                                          error:&error];
-  [self verifyVector:vector key:@"plaintext" equals:plaintext title:[name stringByAppendingString:@" encrypt"]];
+  [self verifyVector:vector key:@"plaintext_hex" equals:plaintext title:[name stringByAppendingString:@" encrypt"]];
 }
 
-- (void)verify_password:(NSDictionary *)vector {
+- (void)verify_v3_password:(NSDictionary *)vector {
   [self _verifyPassword:vector settings:kRNCryptorAES256Settings name:@"password"];
 }
 
-- (void)verify_password_short:(NSDictionary *)vector {
-  NSCParameterAssert(vector[@"iterations"]);
-
-  RNCryptorSettings settings = kRNCryptorAES256Settings;
-  settings.keySettings.rounds = [vector[@"iterations"] intValue];
-  settings.HMACKeySettings.rounds = [vector[@"iterations"] intValue];
-  [self _verifyPassword:vector settings:settings name:@"short password"];
+- (void)verify_v2_password:(NSDictionary *)vector {
+  [self _verifyPassword:vector settings:kRNCryptorAES256Settings name:@"password"];
 }
 
-- (void)verify_key:(NSDictionary *)vector {
+- (void)verify_v1_password:(NSDictionary *)vector {
+  [self _verifyPassword:vector settings:kRNCryptorAES256Settings name:@"password"];
+}
+
+- (void)verify_v3_key:(NSDictionary *)vector {
   NSCParameterAssert(vector[@"title"]);
   NSCParameterAssert(vector[@"version"]);
   NSCParameterAssert(vector[@"enc_key_hex"]);
